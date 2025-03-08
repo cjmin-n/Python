@@ -47,7 +47,5 @@ sims = np.dot(feat1, feat2.T) #np.dot 행렬도?를 통해 두 배열의 유사�
 print(sims) 
 # 수지 단독 사진 2개 비교 : 0.5183684
 # 얼마 이상이어야 같은 사람일까? 0.4이상
-# 다른 사진이면 * 10?
-# 같은 사진이면 / 10
 
 ##마지막에러 pip install onnxruntime : onnxruntime 추론기 기반의 모델이기때문
