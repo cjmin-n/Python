@@ -1,0 +1,24 @@
+from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
+import torch
+# 2. 모델과 토크나이저 로드
+model_name = "circulus/kobart-trans-ko-en-v2"
+tokenizer = AutoTokenizer.from_pretrained(model_name)
+model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
+# 3. INPUT TEXT 번역할 한국어 문장
+text = "안녕하세요. 오늘 날씨가 정말 좋네요!"
+# 4. 전처리 토큰화 및 입력 변환 (token_type_ids 제거)
+inputs = tokenizer(text, return_tensors="pt")
+input_ids = inputs["input_ids"]
+attention_mask = inputs["attention_mask"]
+# 모델 추론 수행 (token_type_ids 제거)
+outputs = model.generate(input_ids=input_ids, attention_mask=attention_mask)
+# 번역 결과 디코딩
+translated_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
+print("번역 결과:", translated_text)
+
+
+# 짧은거
+# from transformers import pipeline
+# pipe = pipeline("translation", model="circulus/kobart-trans-ko-en-v2")
+# result = pipe("오늘 점심 마라탕 먹을거야")
+# print(result)
