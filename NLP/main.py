@@ -12,7 +12,17 @@ import time
 import cv2
 import numpy as np
 
-app = FastAPI()
+import argparse
+import sys
+import insightface
+from insightface.app import FaceAnalysis
+from insightface.data import get_image as ins_get_image
+
+from transformers import pipeline
+
+from kokoro import KPipeline
+from IPython.display import display, Audio
+import soundfile as sf
 
 # MediaPipe 모델 설정 
 # - 모델은 속도를 위해 전역변수로 관리
@@ -23,6 +33,15 @@ classifier = vision.ImageClassifier.create_from_options(options)
 base_options = python.BaseOptions(model_asset_path='models\efficientdet_lite2.tflite')
 options = vision.ObjectDetectorOptions(base_options=base_options, score_threshold=0.5)
 detector = vision.ObjectDetector.create_from_options(options)
+
+fa_model = FaceAnalysis() # 모델 자동으로 다운
+fa_model.prepare(ctx_id=0, det_size=(640,640)) 
+
+review_classifier = pipeline("sentiment-analysis", model="WhitePeak/bert-base-cased-Korean-sentiment")
+
+pipeline = KPipeline(lang_code='a')
+
+app = FastAPI()
 
 
 # 이미지 시각화 설정
@@ -72,6 +91,17 @@ def read_root():
 @app.get("/items/{item_id}")
 def read_item(item_id: int = 1, q: Union[str, None] = "test"):
     return {"item_id": item_id, "q": q}
+
+
+@app.get("/review_classification")
+def review_classification(input_text: str):
+    result = review_classifier(input_text)
+    if result[0]['label'] == 'LABEL_1':
+        classification = "긍정"
+    else:
+        classification = "부정"
+    return {"classification": classification}
+
 
 @app.post("/img_cls")
 async def img_cls(
@@ -138,33 +168,64 @@ async def obj_det(
 
 
 
+@app.post("/face_recognition")
+async def face_recognition(
+    image1: UploadFile = File(...),
+    image2: UploadFile = File(...)
+):
+     # 이미지 파일 저장
+    contents = await image1.read()
+    filename1 = f"temp_{image1.filename}"
+    with open(filename1, "wb") as f:
+        f.write(contents)
+
+    contents = await image2.read()
+    filename2 = f"temp_{image2.filename}"
+    with open(filename2, "wb") as f:
+        f.write(contents)
 
 
+    img1 = cv2.imread(filename1)
+    img2 = cv2.imread(filename2)
 
-# @app.post("/face_recognition")
-# async def face_recognition(
-#     image1: UploadFile = File(...),
-#     image2: UploadFile = File(...)
-# ):
-#     """
-#     얼굴 인식 API
     
-#     두 개의 이미지를 업로드하여 얼굴 인식을 수행합니다.
-    
-#     - **image1**: 첫 번째 이미지 파일
-#     - **image2**: 두 번째 이미지 파일
-    
-#     Returns:
-#         JSON 응답
-#     """
-#     # 여기에 얼굴 인식 로직을 구현할 수 있습니다
-#     pass
-    
-#     return JSONResponse(
-#         content={
-#             "message": "얼굴 인식 요청이 성공적으로 처리되었습니다",
-#             "image1_filename": image1.filename,
-#             "image2_filename": image2.filename,
-#         },
-#         status_code=200
-#     )
+    face1 = fa_model.get(img1) 
+    assert len(face1)==1
+
+    face2 = fa_model.get(img2) 
+    assert len(face2)==1
+
+    feat1 = np.array(face1[0].normed_embedding , dtype=np.float32)
+    feat2 = np.array(face2[0].normed_embedding , dtype=np.float32)
+    sims = np.dot(feat1, feat2.T) 
+    print(sims) # sims가 numpy.float32 타입이라서 float로 변환해줘야함
+    if sims > 0.4:
+        message = "두 이미지는 같은 사람입니다."
+    else: 
+        message = "두 이미지는 다른 사람입니다."
+
+    return JSONResponse(
+        content={
+            "message": message,
+            # "image1_filename": image1.filename,
+            # "image2_filename": image2.filename,
+            "similarity": float(sims)
+        },
+        status_code=200
+    )
+
+@app.get("/tts")
+async def tts(
+    text: str
+):
+    generator = pipeline(
+        text, voice='af_heart', # <= change voice here
+        speed=1, split_pattern=r'\n+'
+    )
+    for i, (gs, ps, audio) in enumerate(generator):
+        print(i)  # i => index
+        print(gs) # gs => graphemes/text
+        print(ps) # ps => phonemes
+        display(Audio(data=audio, rate=24000, autoplay=i==0))
+        sf.write(f'{i}.wav', audio, 24000) # save each audio file
+        return FileResponse(f"{i}.wav")
